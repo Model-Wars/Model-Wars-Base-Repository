@@ -19,8 +19,11 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install CPU PyTorch
+      - name: Install PyTorch (CPU)
         run: pip install torch --index-url https://download.pytorch.org/whl/cpu
 
-      - name: Run Submission Validator
-        run: python tools/validate_submission.py
+      - name: Fetch and Run Official Trusted Validator
+        run: |
+          # Pull trusted validator directly from official tournament repository
+          curl -sSL https://raw.githubusercontent.com/Model-Wars/Model-Wars-Base-Repository/main/tools/validate_submission.py -o /tmp/official_validator.py
+          python /tmp/official_validator.py .

@@ -3,6 +3,8 @@
 
 Ensures participant models are trained, sealed, documented, and conform strictly
 to tournament rules and PyTorch tensor architectures.
+
+Tamper-proof: Detects modifications to the CI/CD workflow and enforces official rules.
 """
 import ast
 import hashlib
@@ -10,13 +12,15 @@ import json
 import os
 import re
 import sys
+import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_ROOT = Path(__file__).resolve().parents[1]
 STARTER_CHECKPOINT_SHA = "579fa26010140514d2e9b7f0e2871bee569c594b7da8648e31ee1489007cd5b7"
 STARTER_AGENT_ID = "shryssssss/v13"
 EXPECTED_PARAMS = 26181
 FORBIDDEN_MODULES = {"socket", "subprocess", "requests", "urllib", "http", "ftplib", "multiprocessing"}
+UPSTREAM_WORKFLOW_URL = "https://raw.githubusercontent.com/Model-Wars/Model-Wars-Base-Repository/main/.github/workflows/validate.yml"
 
 
 def sha256_file(path: Path) -> str:
@@ -27,23 +31,57 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def verify_ci_tampering(root: Path):
+    """Detects if participant altered .github/workflows/validate.yml."""
+    local_wf = root / ".github" / "workflows" / "validate.yml"
+    if not local_wf.exists():
+        sys.exit("FAIL: Disqualified! .github/workflows/validate.yml has been deleted.")
+
+    try:
+        req = urllib.request.Request(
+            UPSTREAM_WORKFLOW_URL,
+            headers={"User-Agent": "Model-Wars-Validator/1.0"}
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            upstream_bytes = resp.read()
+
+        local_sha = sha256_file(local_wf)
+        upstream_sha = hashlib.sha256(upstream_bytes).hexdigest()
+
+        if local_sha != upstream_sha:
+            sys.exit(
+                "FAIL: DISQUALIFIED!\n"
+                "Tampering detected: .github/workflows/validate.yml does not match the official tournament workflow.\n"
+                "Participants are not permitted to modify CI/CD validation scripts."
+            )
+        print("[✓] CI/CD pipeline integrity verified against official tournament upstream.")
+    except urllib.error.URLError as e:
+        print(f"[!] Warning: Network check skipped ({e}); proceeding with local validation.")
+
+
 def main():
-    print(f"[*] Validating repository at: {ROOT}")
+    root = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 and sys.argv[1] != "." else (
+        Path(".").resolve() if Path("bot.toml").exists() else DEFAULT_ROOT
+    )
+    print(f"[*] Validating repository at: {root}")
 
     # Check if running on the base starter template repository itself
     gh_repo = os.environ.get("GITHUB_REPOSITORY", "").lower()
     is_base_template = gh_repo.endswith("model-wars-base-repository") or gh_repo.endswith("rlbot-v13-starter")
 
-    if is_base_template and not (ROOT / "submission.json").exists():
+    if is_base_template and not (root / "submission.json").exists():
         print("[*] Base starter template detected in CI. Verifying baseline integrity...")
-        sys.path.insert(0, str(ROOT / "tools"))
+        sys.path.insert(0, str(root / "tools"))
         import kit
-        kit.verify(ROOT)
+        kit.verify(root)
         print("[✓] Baseline template integrity confirmed. Ready for participant use.")
         sys.exit(0)
 
-    # 1. Submission registration check
-    sub_file = ROOT / "submission.json"
+    # 1. Tamper Detection Check (Participant cannot modify validate.yml)
+    verify_ci_tampering(root)
+
+    # 2. Submission registration check
+    sub_file = root / "submission.json"
     if not sub_file.exists():
         sys.exit(
             "FAIL: submission.json missing!\n"
@@ -54,8 +92,8 @@ def main():
 
     submission = json.loads(sub_file.read_text(encoding="utf-8"))
 
-    # 2. Identity Check
-    bot_toml = (ROOT / "bot.toml").read_text(encoding="utf-8")
+    # 3. Identity Check
+    bot_toml = (root / "bot.toml").read_text(encoding="utf-8")
     if 'name = "V13"' in bot_toml:
         sys.exit("FAIL: Bot name in bot.toml is still 'V13'. Participants must use a custom bot name.")
 
@@ -69,8 +107,8 @@ def main():
     if submission.get("agent_id") != agent_id:
         sys.exit(f"FAIL: agent_id mismatch between bot.toml ('{agent_id}') and submission.json ('{submission.get('agent_id')}').")
 
-    # 3. Model Weight & Anti-Plagiarism Check
-    model_path = ROOT / "model" / "V13.pt"
+    # 4. Model Weight & Anti-Plagiarism Check
+    model_path = root / "model" / "V13.pt"
     if not model_path.exists():
         sys.exit("FAIL: Model weights file model/V13.pt is missing.")
 
@@ -81,13 +119,13 @@ def main():
             "Submissions must contain participant-trained model weights. No training was detected."
         )
 
-    # 4. PIN & Manifest Integrity
-    runtime_code = (ROOT / "src" / "runtime.py").read_text(encoding="utf-8")
+    # 5. PIN & Manifest Integrity
+    runtime_code = (root / "src" / "runtime.py").read_text(encoding="utf-8")
     pin_match = re.search(r"PIN\s*=\s*'([0-9a-f]{64})'", runtime_code)
     if not pin_match or pin_match.group(1) != model_sha:
         sys.exit(f"FAIL: PIN in src/runtime.py does not match actual model/V13.pt SHA256 ({model_sha}). Run tools/kit.py seal.")
 
-    # 5. Provenance & Results Documentation
+    # 6. Provenance & Results Documentation
     provenance = submission.get("training_provenance")
     if not provenance or not isinstance(provenance, dict):
         sys.exit(
@@ -95,15 +133,15 @@ def main():
             "Run tools/kit.py seal with --provenance containing honest experiment details."
         )
 
-    results_md = ROOT / "docs" / "PARTICIPANT_RESULTS.md"
+    results_md = root / "docs" / "PARTICIPANT_RESULTS.md"
     if not results_md.exists() or len(results_md.read_text(encoding="utf-8").strip()) < 50:
         sys.exit(
             "FAIL: docs/PARTICIPANT_RESULTS.md is missing or too brief (< 50 chars).\n"
             "Participants must document their training procedure, validation metrics, and GUI test results."
         )
 
-    # 6. Static Code Security Scan
-    for py_file in (ROOT / "src").glob("*.py"):
+    # 7. Static Code Security Scan
+    for py_file in (root / "src").glob("*.py"):
         try:
             tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=py_file.name)
         except SyntaxError as e:
@@ -121,7 +159,7 @@ def main():
                 if node.func.id in {"eval", "exec"}:
                     sys.exit(f"FAIL: Disallowed function call '{node.func.id}' in {py_file.name}")
 
-    # 7. Model Architecture and Tensor Check
+    # 8. Model Architecture and Tensor Check
     import torch
     from torch import nn
 
