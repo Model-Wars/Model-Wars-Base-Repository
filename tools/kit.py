@@ -123,6 +123,29 @@ def seal(checkpoint, provenance):
     refresh(ROOT);verify(ROOT)
     print('SEALED WITH ORIGINAL 13D/GRU SHAPES. Run src/preflight.py, then GUI. No fitting performed.')
 
+def init_repo(name, agent_id):
+    assert not (ROOT/'submission.json').exists(), 'Repository already initialized with submission.json'
+    assert re.fullmatch(r'[A-Za-z0-9 _-]{1,60}', name), 'Use a simple display name'
+    assert re.fullmatch(r'[A-Za-z0-9_-]+/[A-Za-z0-9_-]+', agent_id), 'Use author/bot identifier'
+    config=ROOT/'bot.toml'
+    config.write_text(config.read_text().replace('name = "V13"', 'name = '+json.dumps(name))
+                      .replace('shryssssss/v13', agent_id), encoding='utf-8')
+    for filename in ('bot.py','preflight.py'):
+        p=ROOT/'src'/filename
+        p.write_text(p.read_text().replace('shryssssss/v13', agent_id), encoding='utf-8')
+    runtime=ROOT/'src/runtime.py'
+    text=runtime.read_text()
+    line="        if saved['dataset_manifest_sha256']!=DATASET_PIN:raise RuntimeError('Checkpoint dataset identity mismatch')"
+    if line in text:
+        runtime.write_text(text.replace(line, '        # Participant repo: training provenance is recorded in submission.json.'), encoding='utf-8')
+    submission={'kind':'participant_editable_fork','name':name,'agent_id':agent_id,
+                'baseline_checkpoint_sha256':'579fa26010140514d2e9b7f0e2871bee569c594b7da8648e31ee1489007cd5b7',
+                'checkpoint_source':'Unchanged starter weights; no training performed by this tool',
+                'training_provenance':None,'live_acceptance':'NOT TESTED for this submission'}
+    (ROOT/'submission.json').write_text(json.dumps(submission,indent=2)+'\n')
+    refresh(ROOT)
+    print('INITIALIZED IN-PLACE:', name, agent_id)
+
 def archive(destination):
     verify(ROOT)
     assert not destination.exists(), 'Archive exists; refusing overwrite'
@@ -133,12 +156,15 @@ def archive(destination):
 
 if __name__=='__main__':
     p=argparse.ArgumentParser();s=p.add_subparsers(dest='command',required=True)
-    s.add_parser('verify');q=s.add_parser('fork');q.add_argument('--destination',type=Path,required=True)
+    s.add_parser('verify')
+    q=s.add_parser('init');q.add_argument('--name',required=True);q.add_argument('--agent-id',required=True)
+    q=s.add_parser('fork');q.add_argument('--destination',type=Path,required=True)
     q.add_argument('--name',required=True);q.add_argument('--agent-id',required=True)
     q=s.add_parser('seal');q.add_argument('--checkpoint',type=Path);q.add_argument('--provenance',type=Path)
     q=s.add_parser('archive');q.add_argument('--output',type=Path,required=True)
     a=p.parse_args()
     if a.command=='verify':verify(ROOT)
+    elif a.command=='init':init_repo(a.name,a.agent_id)
     elif a.command=='fork':fork(a.destination,a.name,a.agent_id)
     elif a.command=='seal':seal(a.checkpoint,a.provenance)
     else:archive(a.output)
