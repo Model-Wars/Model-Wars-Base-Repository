@@ -112,6 +112,16 @@ def main():
     if not model_path.exists():
         sys.exit("FAIL: Model weights file model/V13.pt is missing.")
 
+    # Git LFS pointer check
+    if model_path.stat().st_size < 10240:
+        content_sample = model_path.read_bytes()[:100]
+        if b"git-lfs" in content_sample:
+            sys.exit(
+                "FAIL: model/V13.pt is an unresolved Git LFS text pointer (<1KB)!\n"
+                "Ensure Git LFS is installed and pulled: run 'git lfs pull'."
+            )
+        sys.exit(f"FAIL: model/V13.pt is suspiciously small ({model_path.stat().st_size} bytes < 10KB).")
+
     model_sha = sha256_file(model_path)
     if model_sha == STARTER_CHECKPOINT_SHA:
         sys.exit(
@@ -197,6 +207,33 @@ def main():
     num_params = sum(p.numel() for p in model.parameters())
     if num_params != EXPECTED_PARAMS:
         sys.exit(f"FAIL: Model parameter count ({num_params}) does not match expected ({EXPECTED_PARAMS}).")
+
+    # Cosine Similarity Check against baseline starter weights (Anti-Noise Cheat)
+    try:
+        import io
+        import urllib.request
+        starter_req = urllib.request.Request(
+            "https://raw.githubusercontent.com/Model-Wars/Model-Wars-Base-Repository/main/model/V13.pt",
+            headers={"User-Agent": "Model-Wars-Validator/1.0"}
+        )
+        with urllib.request.urlopen(starter_req, timeout=10) as resp:
+            starter_loaded = torch.load(io.BytesIO(resp.read()), map_location="cpu", weights_only=True)
+            starter_model = Policy().eval()
+            starter_model.load_state_dict(starter_loaded["state_dict"], strict=True)
+
+            v_sub = torch.cat([p.flatten() for p in model.parameters()])
+            v_start = torch.cat([p.flatten() for p in starter_model.parameters()])
+
+            cos_sim = torch.nn.functional.cosine_similarity(v_sub, v_start, dim=0).item()
+            print(f"    - Baseline Cosine Similarity: {cos_sim:.5f}")
+            if cos_sim > 0.999:
+                sys.exit(
+                    f"FAIL: DISQUALIFIED!\n"
+                    f"Model weights have {cos_sim:.5f} cosine similarity (> 0.999) with the starter baseline.\n"
+                    f"Trivial noise perturbations of the baseline weights are not permitted. You must train your own policy."
+                )
+    except Exception as e:
+        print(f"[!] Note: Baseline cosine comparison skipped ({e}).")
 
     with torch.inference_mode():
         dummy_in = torch.randn(1, 13)

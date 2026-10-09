@@ -1,7 +1,7 @@
 {
   "format": "v13_participant_kit_v3",
   "files": {
-    ".github/workflows/validate.yml": "cd52356c0980d0f37f3a222bac54d6357c17fa9288fa2cb8755fcdca73821e94",
+    ".github/workflows/validate.yml": "b3b932984a53c17b6f6cacf79c1c23c689353b631a57a45a4403bb47ea64f242",
     ".gitignore": "3e176cc020f412656106890d2797a28efbe2606bbb5b3a80451533e4b75a3733",
     "CHECK.cmd": "c8acae5d0fa6b779252726715af49a0cc4e86a08a6548fd5e6c87e18e6c5cdfe",
     "LICENSE_RLBOT.txt": "b6706a274db8a56d5cdcb526960373bc61f771e1622db714361c3c7c647dd0fd",
@@ -45,6 +45,6 @@
     "src/preflight.py": "8d6c837fff18a16424fc899bf7bbe6fea725de006af33aab716bc24ca7d23e5f",
     "src/runtime.py": "f35531af9aa0be5e6038ada6850e35a8749061b91a192027dbe345295b1158df",
     "tools/kit.py": "3fa865bb48ec887cb397eb2ac4689054f79a4fb163b5b01077d7d2201124c622",
-    "tools/validate_submission.py": "8c05f1ac8d43f34eff11c9916dece0594dfbc55e128e9b6dfa3baf00d5fb1c47"
+    "tools/validate_submission.py": "afe4ebfd1d79c42e2a81833812ccf1cbb68141bf90d977819e7f1b6b65646e38"
   }
 }
